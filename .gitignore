@@ -1,0 +1,7 @@
+/build/
+/.vs/
+/out/
+/libs/SFML/
+/x64/
+/Rigidbod.1192bdba/
+*.vcxproj.user
