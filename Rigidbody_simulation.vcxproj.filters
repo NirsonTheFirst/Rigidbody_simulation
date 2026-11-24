@@ -20,16 +20,33 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="physics.cpp">
+    <ClCompile Include="collision.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
     <ClCompile Include="display.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
-    <ClInclude Include="physics.h">
+    <ClInclude Include="collision.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="settings.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="display.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="scene.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="simulation.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClInclude Include="scene.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="simulation.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

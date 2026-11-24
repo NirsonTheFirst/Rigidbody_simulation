@@ -1,112 +1,116 @@
 ﻿#include "display.h"
+#include "settings.h"
 
+#include <iomanip>
+#include <sstream>
 #include <string>
 
-static float screenX(double x)
+namespace
 {
-    return 616.0f + static_cast<float>(x * 11.0);
-}
-
-static void rectangle(sf::RenderWindow& window, sf::Vector2f position, sf::Vector2f size,
-    sf::Color fill, sf::Color outline = sf::Color::Transparent)
+const sf::Color Ink{ 32, 32, 32 };
+const sf::Color Grey{ 106, 106, 106 };
+const std::wstring NormalHz = std::to_wstring(static_cast<int>(PhysicsHz));
+const std::wstring ProjectileHz = std::to_wstring(static_cast<int>(FastHz));
+struct ModeLabel
 {
-    sf::RectangleShape shape(size);
-    shape.setPosition(position);
-    shape.setFillColor(fill);
-    shape.setOutlineThickness(outline == sf::Color::Transparent ? 0.0f : 1.0f);
-    shape.setOutlineColor(outline);
-    window.draw(shape);
-}
+    Mode mode;
+    std::wstring text;
+};
 
-static void label(sf::RenderWindow& window, const sf::Font& font, const std::wstring& value,
-    sf::Vector2f position, unsigned int size, sf::Color color)
+const std::array ModeLabels{
+    ModeLabel{ Mode::Discrete, L"1   Discrete (" + NormalHz + L" Hz)" },
+    ModeLabel{ Mode::Ccd, L"2   Continuous (CCD)" },
+    ModeLabel{ Mode::MultiRate, L"3   Multi-rate (" + NormalHz + L"/" + ProjectileHz + L" Hz)" }
+};
+
+void label(sf::RenderTarget& target, const sf::Font& font, const std::wstring& value,
+    sf::Vector2f position, unsigned size, sf::Color color = Ink)
 {
     sf::Text text(font, value, size);
     text.setPosition(position);
     text.setFillColor(color);
-    window.draw(text);
+    target.draw(text);
 }
 
-constexpr std::array ModeLabels{ L"Обычная проверка", L"CCD", L"Multi-rate" };
-
-static void drawDirection(sf::RenderWindow& window, float x, float y, bool right, sf::Color color)
+void rectangle(sf::RenderTarget& target, sf::Vector2f position, sf::Vector2f size, sf::Color color)
 {
-    const float sign = right ? 1.0f : -1.0f;
-    const float tip = x + sign * 27.0f;
-    const std::array<sf::Vertex, 5> points{{
-        { { x + sign * 7.0f, y }, color },
-        { { tip, y }, color },
-        { { tip - sign * 6.0f, y - 5.0f }, color },
-        { { tip, y }, color },
-        { { tip - sign * 6.0f, y + 5.0f }, color }
-    }};
-    window.draw(points.data(), points.size(), sf::PrimitiveType::LineStrip);
+    sf::RectangleShape rect(size);
+    rect.setPosition(position);
+    rect.setFillColor(color);
+    target.draw(rect);
 }
 
-void drawExperiment(sf::RenderWindow& window, const sf::Font& font, bool hasFont,
-    const std::array<Shot, 3>& results, bool showResult, int visibleMode)
+void drawPack(sf::RenderTarget& target, const std::vector<Circle>& pack, const std::vector<Circle>& previous,
+    double alpha, sf::Color color)
 {
-    const sf::Color Paper = sf::Color::White;
-    const sf::Color Ink = sf::Color::Black;
-    constexpr sf::Color Muted{ 100, 100, 100 };
-    constexpr sf::Color Rule{ 210, 210, 210 };
-    constexpr sf::Color Wall{ 175, 175, 175 };
-    constexpr sf::Color HitColor{ 34, 115, 62 };
-    constexpr sf::Color MissColor{ 170, 45, 45 };
-
-    window.clear(Paper);
-    if (hasFont)
+    for (std::size_t i = 0; i < pack.size(); ++i)
     {
-        label(window, font, L"Столкновение со стенкой", { 28, 20 }, 25, Ink);
-        label(window, font, L"Скорость: " + std::to_wstring(static_cast<int>(LaunchSpeed)) +
-            L" пикс/с, стенка " + std::to_wstring(static_cast<int>(WallRight - WallLeft)) +
-            L" пикс.", { 29, 55 }, 17, Muted);
-        label(window, font, showResult ? L"После шага" : L"До шага",
-            { 770, 27 }, 19, Ink);
-        label(window, font, L"Старт", { screenX(StartX) - 22, 93 }, 16, Muted);
-        label(window, font, L"Стенка", { screenX((WallLeft + WallRight) / 2) - 24, 93 }, 16, Muted);
-        label(window, font, showResult ? L"Контур: начальное положение. Стрелка: направление движения."
-            : L"Нажмите пробел, чтобы сделать шаг.",
-            { 29, 457 }, 17, Ink);
-        label(window, font, L"Пробел: шаг     R: сброс     0: все режимы     1-3: один режим",
-            { 29, 491 }, 16, Muted);
+        const Circle& body = pack[i];
+        const Vec2 center = previous[i].center + (body.center - previous[i].center) * alpha;
+        const float radius = static_cast<float>(body.radius);
+        sf::CircleShape shape(radius);
+        shape.setOrigin({ radius, radius });
+        shape.setPosition({ static_cast<float>(center.x), static_cast<float>(center.y) });
+        shape.setFillColor(color);
+        target.draw(shape);
     }
-    for (std::size_t i = 0; i < results.size(); ++i)
+}
+}
+
+void drawWorld(sf::RenderTarget& target, const sf::Font& font, bool hasFont, const World& world,
+    const World& previous, Mode mode, bool running, int speedDivisor, double alpha,
+    const FrameStats& stats)
+{
+    target.clear(sf::Color::White);
+    constexpr float rim = 12;
+    const sf::Vector2f origin{ static_cast<float>(Arena.min.x), static_cast<float>(Arena.min.y) };
+    const sf::Vector2f size{ static_cast<float>(Arena.max.x - Arena.min.x),
+        static_cast<float>(Arena.max.y - Arena.min.y) };
+    rectangle(target, origin - sf::Vector2f{ rim, rim }, size + sf::Vector2f{ 2 * rim, 2 * rim }, Grey);
+    rectangle(target, origin, size, sf::Color(247, 247, 247));
+
+    const Box& wall = world.walls[TestWall];
+    rectangle(target, { static_cast<float>(wall.min.x), static_cast<float>(wall.min.y) },
+        { static_cast<float>(wall.max.x - wall.min.x), static_cast<float>(wall.max.y - wall.min.y) },
+        sf::Color(138, 138, 138));
+
+    drawPack(target, world.fixed, previous.fixed, alpha, sf::Color(193, 193, 193));
+    drawPack(target, world.normal, previous.normal, alpha, Grey);
+    drawPack(target, world.fast, previous.fast, alpha, Ink);
+
+    if (!hasFont)
+        return;
+
+    label(target, font, L"Rigidbody Simulation", { 27, 14 }, 25);
+    label(target, font, world.gravityEnabled ? L"Gravity: on" : L"Gravity: off",
+        { 669, 20 }, 16, Grey);
+    const std::wstring speed = speedDivisor == 1 ? L"1" : L"1/" + std::to_wstring(speedDivisor);
+    label(target, font, L"Speed: " + speed, { 480, 20 }, 16, Grey);
+    label(target, font, running ? L"Running" : L"Paused", { 851, 20 }, 16, Grey);
+    for (std::size_t i = 0; i < ModeLabels.size(); ++i)
     {
-        if (visibleMode >= 0 && visibleMode != static_cast<int>(i))
-            continue;
-        const float y = visibleMode < 0 ? 165.0f + 109.0f * static_cast<float>(i) : 274.0f;
-        const Shot shot = showResult ? results[i] : Shot{};
-        rectangle(window, { 28, y - 50 }, { 964, 1 }, Rule);
-        rectangle(window, { 280, y }, { 685, 1 }, Rule);
-        rectangle(window, { screenX(WallLeft), y - 33 },
-            { screenX(WallRight) - screenX(WallLeft), 66 }, Wall);
-
-        const auto position = [y](double x) { return sf::Vector2f{ screenX(x - HalfWidth), y - 12 }; };
-        const sf::Vector2f shotSize{ screenX(HalfWidth) - screenX(-HalfWidth), 24 };
-        if (showResult)
-            rectangle(window, position(StartX), shotSize, sf::Color::Transparent, Muted);
-
-        const bool tunnelled = showResult && !shot.hit && shot.x - HalfWidth >= WallRight;
-        const sf::Color resultColor = shot.hit ? HitColor : (tunnelled ? MissColor : Ink);
-        rectangle(window, position(shot.x), shotSize, resultColor);
-        const bool movingRight = shot.velocity >= 0;
-        const float arrowX = screenX(shot.x + (movingRight ? HalfWidth : -HalfWidth));
-        drawDirection(window, arrowX, y, movingRight, resultColor);
-
-        if (hasFont)
-        {
-            label(window, font, ModeLabels[i], { 29, y - 30 }, 20, Ink);
-            const std::wstring frequency = i == 2
-                ? std::to_wstring(static_cast<int>(FastHz)) + L" Гц для быстрого тела"
-                : std::to_wstring(static_cast<int>(PhysicsHz)) + L" Гц";
-            label(window, font, frequency, { 29, y - 4 }, 16, Muted);
-            if (showResult)
-            {
-                label(window, font, shot.hit ? L"Отскочил" :
-                    (tunnelled ? L"Пролетел сквозь стенку" : L"Продолжил движение"),
-                    { 29, y + 17 }, 17, resultColor);
-            }
-        }
+        const float x = 28.f + 213.f * static_cast<float>(i);
+        const bool selected = ModeLabels[i].mode == mode;
+        rectangle(target, { x, 55 }, { 197, 31 }, selected ? Ink : sf::Color(233, 233, 233));
+        label(target, font, ModeLabels[i].text, { x + 11, 61 }, 16, selected ? sf::Color::White : Ink);
     }
+
+    label(target, font, std::to_wstring(world.fixed.size()) + L" static circles    " +
+        std::to_wstring(world.normal.size()) + L" regular circles    " + std::to_wstring(world.fast.size()) +
+        L" projectiles    Wall: " + std::to_wstring(static_cast<int>(WallThickness)) + L" px",
+        { 28, 471 }, 15, Grey);
+    std::wostringstream physicsTime;
+    physicsTime << L"Physics avg: ";
+    if (stats.frames > 0)
+        physicsTime << std::fixed << std::setprecision(3) << stats.totalPhysicsMs / stats.frames;
+    else
+        physicsTime << L"--";
+    physicsTime << L" ms/frame";
+    label(target, font, physicsTime.str(), { 572, 471 }, 15);
+    if (mode == Mode::MultiRate)
+        label(target, font, L"240 Hz steps: " + (stats.frames > 0 ? std::to_wstring(stats.fastSteps) : L"--"),
+            { 823, 471 }, 15);
+
+    label(target, font, L"Space: step    P: play/pause    S: slow motion    G: gravity    R: reset    Esc: exit",
+        { 28, 503 }, 15);
 }

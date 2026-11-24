@@ -1,8 +1,15 @@
 ﻿#pragma once
 
-#include "physics.h"
-
+#include "simulation.h"
 #include <SFML/Graphics.hpp>
 
-void drawExperiment(sf::RenderWindow& window, const sf::Font& font, bool hasFont,
-    const std::array<Shot, 3>& results, bool showResult, int visibleMode);
+struct FrameStats
+{
+    double totalPhysicsMs = 0;
+    int frames = 0;
+    int fastSteps = 0;
+};
+
+void drawWorld(sf::RenderTarget& target, const sf::Font& font, bool hasFont, const World& world,
+    const World& previous, Mode mode, bool running, int speedDivisor, double alpha,
+    const FrameStats& stats);
